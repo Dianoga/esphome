@@ -18,6 +18,31 @@ static const uint8_t PARTIAL_UPDATE_LUT[LUT_SIZE_WAVESHARE] = {
     0x10, 0x18, 0x18, 0x08, 0x18, 0x18, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x00, 0x00, 0x13, 0x14, 0x44, 0x12, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
 
+static const uint8_t LUT_SIZE_WAVESHARE_21_PARTIAL = 153;
+
+static const uint8_t PARTIAL_UPDATE_LUT_WAVESHARE_21[159] =
+{
+0x0,0x40,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,
+0x80,0x80,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,
+0x40,0x40,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,
+0x0,0x80,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,
+0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,
+0x0A,0x0,0x0,0x0,0x0,0x0,0x2,  
+0x1,0x0,0x0,0x0,0x0,0x0,0x0,
+0x1,0x0,0x0,0x0,0x0,0x0,0x0,
+0x0,0x0,0x0,0x0,0x0,0x0,0x0,
+0x0,0x0,0x0,0x0,0x0,0x0,0x0,
+0x0,0x0,0x0,0x0,0x0,0x0,0x0,
+0x0,0x0,0x0,0x0,0x0,0x0,0x0,
+0x0,0x0,0x0,0x0,0x0,0x0,0x0,
+0x0,0x0,0x0,0x0,0x0,0x0,0x0,
+0x0,0x0,0x0,0x0,0x0,0x0,0x0,
+0x0,0x0,0x0,0x0,0x0,0x0,0x0,
+0x0,0x0,0x0,0x0,0x0,0x0,0x0,
+0x22,0x22,0x22,0x22,0x22,0x22,0x0,0x0,0x0,
+0x22,0x17,0x41,0xB0,0x32,0x36,
+};
+
 static const uint8_t LUT_SIZE_TTGO = 70;
 
 static const uint8_t FULL_UPDATE_LUT_TTGO[LUT_SIZE_TTGO] = {
@@ -172,31 +197,48 @@ void WaveshareEPaperTypeA::initialize() {
 
     this->command(0x12);  // SWRESET
     this->wait_until_idle_();
+  } else if (this->model_ == WAVESHARE_EPAPER_2_9_IN_V2) {
+    this->reset_pin_->digital_write(true);
+    delay(200);
+    this->reset_pin_->digital_write(false);
+    delay(2);
+    this->reset_pin_->digital_write(true);
+    delay(200);
+    this->wait_until_idle_();
+
+    this->command(0x12);  // SWRESET
+    this->wait_until_idle_();
   }
 
   // COMMAND DRIVER OUTPUT CONTROL
   this->command(0x01);
-  this->data(this->get_height_internal() - 1);
-  this->data((this->get_height_internal() - 1) >> 8);
-  this->data(0x00);  // ? GD = 0, SM = 0, TB = 0
+  if (this->model_ == WAVESHARE_EPAPER_2_9_IN_V2) {
+    this->data(0x27);
+    this->data(0x01);
+    this->data(0x00);
+  } else {
+    this->data(this->get_height_internal() - 1);
+    this->data((this->get_height_internal() - 1) >> 8);
+    this->data(0x00);  // ? GD = 0, SM = 0, TB = 0
+    
+    // COMMAND BOOSTER SOFT START CONTROL
+    this->command(0x0C);
+    this->data(0xD7);
+    this->data(0xD6);
+    this->data(0x9D);
 
-  // COMMAND BOOSTER SOFT START CONTROL
-  this->command(0x0C);
-  this->data(0xD7);
-  this->data(0xD6);
-  this->data(0x9D);
+    // COMMAND WRITE VCOM REGISTER
+    this->command(0x2C);
+    this->data(0xA8);
 
-  // COMMAND WRITE VCOM REGISTER
-  this->command(0x2C);
-  this->data(0xA8);
+    // COMMAND SET DUMMY LINE PERIOD
+    this->command(0x3A);
+    this->data(0x1A);
 
-  // COMMAND SET DUMMY LINE PERIOD
-  this->command(0x3A);
-  this->data(0x1A);
-
-  // COMMAND SET GATE TIME
-  this->command(0x3B);
-  this->data(0x08);  // 2µs per row
+    // COMMAND SET GATE TIME
+    this->command(0x3B);
+    this->data(0x08);  // 2µs per row
+  }
 
   // COMMAND DATA ENTRY MODE SETTING
   this->command(0x11);
@@ -207,10 +249,29 @@ void WaveshareEPaperTypeA::initialize() {
     case TTGO_EPAPER_2_13_IN_B74:
     case WAVESHARE_EPAPER_2_9_IN_V2:
       this->data(0x03);  // from top left to bottom right
+
+      this->command(0x44); // SET_RAM_X_ADDRESS_START_END_POSITION
+      this->data((0 >> 3) & 0xFF);
+      this->data((127 >> 3) & 0xFF);
+
+      this->command(0x45); // SET_RAM_Y_ADDRESS_START_END_POSITION
+      this->data(0 & 0xFF);
+      this->data((0 >> 8) & 0xFF);
+      this->data(295 & 0xFF);
+      this->data((295 >> 8) & 0xFF);
+
       // RAM content option for Display Update
       this->command(0x21);
       this->data(0x00);
       this->data(0x80);
+
+      this->command(0x4E); // SET_RAM_X_ADDRESS_COUNTER
+      this->data(0 & 0xFF);
+
+      this->command(0x4F); // SET_RAM_Y_ADDRESS_COUNTER
+      this->data(0 & 0xFF);
+      this->data((0 >> 8) & 0xFF);
+      this->wait_until_idle_();
       break;
     default:
       this->data(0x03);  // from top left to bottom right
@@ -277,6 +338,17 @@ void HOT WaveshareEPaperTypeA::display() {
         case TTGO_EPAPER_2_13_IN_B1:
           this->write_lut_(full_update ? FULL_UPDATE_LUT_TTGO_B1 : PARTIAL_UPDATE_LUT_TTGO_B1, LUT_SIZE_TTGO_B1);
           break;
+        case WAVESHARE_EPAPER_2_9_IN_V2:
+          if (!full_update) {
+            // Reset
+            this->reset_pin_->digital_write(false);
+            delay(5);
+            this->reset_pin_->digital_write(true);
+            delay(10);
+
+            this->write_lut_(PARTIAL_UPDATE_LUT_WAVESHARE_21, LUT_SIZE_WAVESHARE_21_PARTIAL);
+            this->wait_until_idle_();
+          }
         default:
           this->write_lut_(full_update ? FULL_UPDATE_LUT : PARTIAL_UPDATE_LUT, LUT_SIZE_WAVESHARE);
       }
@@ -307,6 +379,51 @@ void HOT WaveshareEPaperTypeA::display() {
       this->data((this->get_height_internal() - 1) >> 8);
 
       break;
+    case WAVESHARE_EPAPER_2_9_IN_V2:
+      if (!full_update) {
+        this->command(0x37); 
+        this->data(0x00);  
+        this->data(0x00);  
+        this->data(0x00);  
+        this->data(0x00); 
+        this->data(0x00);  
+        this->data(0x40);  
+        this->data(0x00);  
+        this->data(0x00);   
+        this->data(0x00);  
+        this->data(0x00);
+        
+        this->command(0x3C); //BorderWaveform
+        this->data(0x80);	
+
+        this->command(0x22); 
+        this->data(0xC0);   
+        this->command(0x20); 
+        this->wait_until_idle_();  
+        
+        // This is all in the default block below
+        // COMMAND SET RAM X ADDRESS START END POSITION
+        this->command(0x44);
+        this->data((0x00 >> 3) & 0xFF);
+        this->data(((this->get_width_internal() - 1) >> 3) & 0xFF);
+
+        // COMMAND SET RAM Y ADDRESS START END POSITION
+        this->command(0x45);
+        this->data((0x00 >> 3) & 0xFF);
+        this->data((0x00 >> 8) & 0xFF);
+        this->data((this->get_height_internal() - 1) & 0xFF);
+        this->data(((this->get_height_internal() - 1) >> 8) & 0xFF);
+
+        // COMMAND SET RAM X ADDRESS COUNTER
+        this->command(0x4E);
+        this->data(0x00);
+        // COMMAND SET RAM Y ADDRESS COUNTER
+        this->command(0x4F);
+        this->data(0x00);
+        this->data(0x00);
+        break;
+
+      }
     case TTGO_EPAPER_2_13_IN_B74:
       // BorderWaveform
       this->command(0x3C);
@@ -373,8 +490,9 @@ void HOT WaveshareEPaperTypeA::display() {
 
   // COMMAND MASTER ACTIVATION
   this->command(0x20);
+  this->wait_until_idle_();
   // COMMAND TERMINATE FRAME READ WRITE
-  this->command(0xFF);
+  // this->command(0xFF);
 
   this->status_clear_warning();
 }
